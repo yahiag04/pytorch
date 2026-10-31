@@ -1404,22 +1404,25 @@ class TestUnaryUfuncs(TestCase):
     @dtypesIfMPS(torch.float16, torch.float32)
     @dtypes(torch.float32, torch.float64)
     @parametrize("name", ("gammainc", "gammaincc"))
-    def test_igamma_backward_a_one(self, device, dtype, name):
+    @parametrize("grad_scale", (0.0, 1.0))
+    def test_igamma_backward_a_one(self, device, dtype, name, grad_scale):
         op = getattr(torch.special, name)
         sign = 1 if name == "gammainc" else -1
         a = torch.ones((2, 1), device=device, dtype=dtype)
         x = torch.tensor(
             [[0.0, 1e-4, 1.0]], device=device, dtype=dtype, requires_grad=True
         )
-        grad_output = torch.tensor(
+        grad_output = grad_scale * torch.tensor(
             [[1.0, -2.0, 0.0], [2.0, -1.0, 3.0]], device=device, dtype=dtype
         )
         grad = torch.autograd.grad(op(a, x), x, grad_output, create_graph=True)[0]
         # P(1, x) = 1 - exp(-x), including its right derivatives at zero.
         expected = sign * grad_output.sum(dim=0, keepdim=True) * (-x).exp()
         self.assertEqual(grad, expected)
-        gradgrad = torch.autograd.grad(grad.sum(), x)[0]
+        gradgrad = torch.autograd.grad(grad.sum(), x, create_graph=True)[0]
         self.assertEqual(gradgrad, -expected)
+        gradgradgrad = torch.autograd.grad(gradgrad.sum(), x)[0]
+        self.assertEqual(gradgradgrad, expected)
 
     @dtypesIfCPU(torch.float16, torch.bfloat16, torch.float32, torch.float64)
     @dtypesIfMPS(torch.float16, torch.float32)
